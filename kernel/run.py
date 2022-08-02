@@ -34,7 +34,7 @@ except ImportError as e:
 
 
 def exception_handler(exception_type, exception, traceback):
-    print("%s: %s" % (exception_type.__name__, exception))
+    print(f"{exception_type.__name__}: {exception}")
 
 
 #
@@ -56,9 +56,9 @@ KERNEL_PATH = SCRIPT_PATH
 LIBS_PATH = (SCRIPT_PATH / '..').resolve() / 'lib'
 USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 
-UEFI_TARGET = "{}-uefi".format(ARCH)
-KERNEL_TARGET = "{}-nrk".format(ARCH)
-USER_TARGET = "{}-nrk-none".format(ARCH)
+UEFI_TARGET = f"{ARCH}-uefi"
+KERNEL_TARGET = f"{ARCH}-nrk"
+USER_TARGET = f"{ARCH}-nrk-none"
 USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 
 #
@@ -144,9 +144,14 @@ def build_bootloader(args):
     with local.cwd(BOOTLOADER_PATH):
         with local.env(RUST_TARGET_PATH=BOOTLOADER_PATH.absolute()):
             if args.verbose:
-                print("cd {}".format(BOOTLOADER_PATH))
-                print("RUST_TARGET_PATH={} xargo ".format(
-                    BOOTLOADER_PATH.absolute()) + " ".join(uefi_build_args))
+                print(f"cd {BOOTLOADER_PATH}")
+                print(
+                    (
+                        f"RUST_TARGET_PATH={BOOTLOADER_PATH.absolute()} xargo "
+                        + " ".join(uefi_build_args)
+                    )
+                )
+
             xargo(*uefi_build_args)
 
 
@@ -164,9 +169,14 @@ def build_kernel(args):
                 build_args += ['--features', feature]
             build_args += CARGO_DEFAULT_ARGS
             if args.verbose:
-                print("cd {}".format(KERNEL_PATH))
-                print("RUST_TARGET_PATH={} xargo ".format(
-                    KERNEL_PATH / 'src' / 'arch' / ARCH) + " ".join(build_args))
+                print(f"cd {KERNEL_PATH}")
+                print(
+                    (
+                        f"RUST_TARGET_PATH={KERNEL_PATH / 'src' / 'arch' / ARCH} xargo "
+                        + " ".join(build_args)
+                    )
+                )
+
             xargo(*build_args)
 
 
@@ -186,9 +196,14 @@ def build_user_libraries(args):
         with local.env(RUSTFLAGS=USER_RUSTFLAGS):
             with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
                 if args.verbose:
-                    print("cd {}".format(LIBS_PATH / "vibrio"))
-                    print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS,
-                                                                           USR_PATH.absolute()) + " ".join(build_args))
+                    print(f'cd {LIBS_PATH / "vibrio"}')
+                    print(
+                        (
+                            f"RUSTFLAGS={USER_RUSTFLAGS} RUST_TARGET_PATH={USR_PATH.absolute()} xargo "
+                            + " ".join(build_args)
+                        )
+                    )
+
                 xargo(*build_args)
 
 
@@ -199,7 +214,7 @@ def build_userspace(args):
 
     for module in args.mods:
         if not (USR_PATH / module).exists():
-            log("User module {} not found, skipping.".format(module))
+            log(f"User module {module} not found, skipping.")
             continue
         with local.cwd(USR_PATH / module):
             with local.env(RUSTFLAGS=USER_RUSTFLAGS):
@@ -212,11 +227,16 @@ def build_userspace(args):
                                 build_args += ['--features', feature_part]
                         else:
                             build_args += ['--features', feature]
-                    log("Build user-module {}".format(module))
+                    log(f"Build user-module {module}")
                     if args.verbose:
-                        print("cd {}".format(USR_PATH / module))
-                        print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(
-                            USER_RUSTFLAGS, USR_PATH.absolute()) + " ".join(build_args))
+                        print(f"cd {USR_PATH / module}")
+                        print(
+                            (
+                                f"RUSTFLAGS={USER_RUSTFLAGS} RUST_TARGET_PATH={USR_PATH.absolute()} xargo "
+                                + " ".join(build_args)
+                            )
+                        )
+
                     xargo(*build_args)
 
 
@@ -251,7 +271,7 @@ def deploy(args):
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         if args.cmd:
-            cmdfile.write('./kernel {}'.format(args.cmd))
+            cmdfile.write(f'./kernel {args.cmd}')
         else:
             cmdfile.write('./kernel')
 
@@ -259,7 +279,7 @@ def deploy(args):
     # Deploy user-modules
     for module in args.mods:
         if not (user_build_path / module).is_file():
-            log("[WARN] Module not found: {}".format(module))
+            log(f"[WARN] Module not found: {module}")
             continue
         if module != "rkapps":
             shutil.copy2(user_build_path / module, esp_path)
@@ -281,7 +301,10 @@ imgfetch kernel
 imgfetch cmdline.in
 {}
 boot EFI/Boot/BootX64.efi
-""".format('\n'.join(['imgfetch {}'.format(m) for m in deployed]))
+""".format(
+            '\n'.join([f'imgfetch {m}' for m in deployed])
+        )
+
 
         boot_file.write(ipxe_script)
 
@@ -358,11 +381,16 @@ def run_qemu(args):
     host_numa_nodes_list = query_host_numa()
     num_host_numa_nodes = len(host_numa_nodes_list)
     if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
-        for node in range(0, args.qemu_nodes):
+        for node in range(args.qemu_nodes):
             mem_per_node = int(args.qemu_memory) / args.qemu_nodes
             prealloc = "on" if args.qemu_prealloc else "off"
             large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
-            backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
+            backend = (
+                "memory-backend-memfd"
+                if args.qemu_large_pages
+                else "memory-backend-ram"
+            )
+
             # This is untested, not sure it works
             #assert args.pvrdma and not args.qemu_default_args
             qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
@@ -466,40 +494,35 @@ def run_qemu(args):
 
 
 def detect_baremetal_shutdown(lb):
-    if "[shutdown-request]" in lb:
-        parts = [p.strip() for p in re.split(' |\r\n', lb)]
-        if len(parts) < 2:
-            return None
-        else:
-            idx = parts.index("[shutdown-request]")
-            if len(parts) > idx + 1:
-                exit_value = int(parts[idx+1])
-            else:
-                raise Exception("Didn't read enough for exit code XD")
-            if exit_value in NRK_EXIT_CODES:
-                print(NRK_EXIT_CODES[exit_value])
-            return exit_value
-    else:
+    if "[shutdown-request]" not in lb:
         return None
+    parts = [p.strip() for p in re.split(' |\r\n', lb)]
+    if len(parts) < 2:
+        return None
+    idx = parts.index("[shutdown-request]")
+    if len(parts) > idx + 1:
+        exit_value = int(parts[idx+1])
+    else:
+        raise Exception("Didn't read enough for exit code XD")
+    if exit_value in NRK_EXIT_CODES:
+        print(NRK_EXIT_CODES[exit_value])
+    return exit_value
 
 
 def run_baremetal(args):
     from plumbum.cmd import sudo, tunctl, ifconfig
 
     # Need to find a config file ${args.machine}.toml
-    cfg_file = SCRIPT_PATH / "{}.toml".format(args.machine)
+    cfg_file = SCRIPT_PATH / f"{args.machine}.toml"
     if not cfg_file.exists():
-        log("Machine {} not supported, '{}' not found.".format(
-            args.machine, cfg_file))
+        log(f"Machine {args.machine} not supported, '{cfg_file}' not found.")
         return 99
     else:
         cfg = toml.load(cfg_file.open())
-        log("Booting on bare-metal server {}".format(
-            cfg['server']['name']))
+        log(f"Booting on bare-metal server {cfg['server']['name']}")
 
         if args.configure_ipxe:
-            log("Execute pre-boot: {}".format(
-                cfg['server']['pre-boot-cmd']))
+            log(f"Execute pre-boot: {cfg['server']['pre-boot-cmd']}")
             subprocess.run(cfg['server']['pre-boot-cmd'],
                            shell=True, check=True, timeout=10)
 
@@ -514,8 +537,8 @@ def run_baremetal(args):
         dest = deploy.path(cfg['deploy']['ipxe-deploy'])
         plumbum.path.utils.copy(to_copy, dest)
 
-        ssh_cmd = "sshpass -p'{}' ssh {}@{}".format(
-            cfg['idrac']['password'], cfg['idrac']['username'], cfg['idrac']['hostname'])
+        ssh_cmd = f"sshpass -p'{cfg['idrac']['password']}' ssh {cfg['idrac']['username']}@{cfg['idrac']['hostname']}"
+
         idrac = pexpect.spawn(ssh_cmd)
 
         idx = idrac.expect(['/admin1-> ', 'racadm>>'])
@@ -523,11 +546,6 @@ def run_baremetal(args):
             # Go to system1, so we can reboot it
             idrac.sendline('cd system1')
             idrac.expect('/admin1/system1')
-        else:
-            # We are in some racadm shell (on some machines), thanks for the
-            # inconsistency, iDRAC
-            pass
-
         # power-cycle it:
         if not args.no_reboot:
             log("Rebooting machine...")
@@ -536,7 +554,7 @@ def run_baremetal(args):
 
         # Connect to system console, and read it out:
         log("Connection to console...")
-        idrac.sendline('console {}'.format(cfg['idrac']['console']))
+        idrac.sendline(f"console {cfg['idrac']['console']}")
         timeout = 1
         linebuffer = ""
         while True:
@@ -553,14 +571,14 @@ def run_baremetal(args):
                     splitted_read = list(read.decode('utf-8').split('\r\n'))
                     # Print current line, add stuff previously read
                     linebuffer = linebuffer + splitted_read[0]
-                    print("{}".format(linebuffer))
+                    print(f"{linebuffer}")
                     ret = detect_baremetal_shutdown(linebuffer)
                     if ret is not None:
                         sys.exit(ret)
 
                     # In case we have some more complete lines, print:
                     for line in splitted_read[1:-1]:
-                        print("{}".format(line))
+                        print(f"{line}")
                         ret = detect_baremetal_shutdown(line)
                         if ret is not None:
                             sys.exit(ret)
@@ -595,10 +613,7 @@ def run(args):
     Returns: A nrk exit error code.
     """
 
-    if args.machine == 'qemu':
-        return run_qemu(args)
-    else:
-        return run_baremetal(args)
+    return run_qemu(args) if args.machine == 'qemu' else run_baremetal(args)
 
 
 #
@@ -610,9 +625,9 @@ if __name__ == '__main__':
 
     user = whoami().strip()
     kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
-    if not user in kvm_members and not args.norun:
-        print("Your user ({}) is not in the kvm group.".format(user))
-        print("Add yourself to the group with `sudo adduser {} kvm`".format(user))
+    if user not in kvm_members and not args.norun:
+        print(f"Your user ({user}) is not in the kvm group.")
+        print(f"Add yourself to the group with `sudo adduser {user} kvm`")
         print("You'll likely have to restart for changes to take effect,")
         print("or run `sudo chmod +666 /dev/kvm` if you don't care about")
         print("kvm access restriction on the machine.")
